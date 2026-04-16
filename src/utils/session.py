@@ -4,6 +4,7 @@ Session management with FlareSolverr fallback.
 
 import requests
 import time
+import threading
 from typing import Any
 from .logger import get_logger
 
@@ -14,10 +15,11 @@ class SessionManager:
     
     def __init__(self):
         self.session = requests.Session()
-        # Set default headers
+        self._lock = threading.Lock()
+        # Set default headers - using a more realistic, modern User-Agent
         self.session.headers.update({
             "Referer": "https://comix.to/",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
         })
         from .config import ConfigManager
         self._config = ConfigManager()
@@ -26,29 +28,71 @@ class SessionManager:
 
     def get(self, url: str, **kwargs: Any) -> requests.Response:
         """Execute a GET request, falling back to FlareSolverr if blocked."""
-        response = self.session.get(url, **kwargs)
+        force_flare = kwargs.pop("force_flare", False)
         
-        # If we get a 403, and haven't triggered FlareSolverr recently (or within this request cycle)
+        if force_flare:
+            with self._lock:
+                logger.info(f"Forcing FlareSolverr bypass for {url}...")
+                if self._solve_cloudflare(url):
+                    return self.session.get(url, **kwargs)
+                else:
+                    logger.error("Forced FlareSolverr bypass failed. Attempting normal request...")
+
+        try:
+            response = self.session.get(url, **kwargs)
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Request failed: {e}")
+            raise
+
+        # Detection logic for Cloudflare / blocking
         is_cloudflare = "cloudflare" in response.headers.get("Server", "").lower()
-        if response.status_code in [403, 503] and (is_cloudflare or "Checking your browser" in response.text or "Just a moment" in response.text):
-            logger.warning(f"Cloudflare block detected for {url}. Attempting FlareSolverr bypass...")
-            if self._solve_cloudflare(url):
-                # Retry request
-                logger.debug(f"Retrying request to {url} after FlareSolverr bypass.")
+        is_error_status = response.status_code in [403, 503, 429]
+        # Only check for textual challenges if the response is actually a text format
+        # Parsing large binary images as text is extremely slow and causes hangs
+        content_type = response.headers.get("Content-Type", "").lower()
+        is_text = "text/html" in content_type or "application/json" in content_type
+        
+        has_challenge = False
+        if is_text and any(text in response.text for text in ["Checking your browser", "Just a moment", "cf-browser-verification", "Ray ID:"]):
+            has_challenge = True
+        
+        # Also check for empty/null results if it looks like an API-level block (specific to Comix)
+        is_empty_result = False
+        try:
+            if response.status_code == 200 and "application/json" in content_type:
+                json_data = response.json()
+                if json_data.get("result") is None and json_data.get("status") == "error":
+                    is_empty_result = True
+                    logger.warning(f"API returned error status for {url}. Might need bypass.")
+        except Exception:
+            pass
+
+        if is_error_status or has_challenge or is_empty_result:
+            if is_cloudflare or has_challenge or is_empty_result:
+                with self._lock:
+                    # Check again inside lock to see if another thread already solved it
+                    logger.warning(f"Block or challenge detected for {url} (Status: {response.status_code}). Attempting FlareSolverr bypass...")
+                    if self._solve_cloudflare(url):
+                        # Retry request
+                        logger.debug(f"Retrying request to {url} after FlareSolverr bypass.")
+                        response = self.session.get(url, **kwargs)
+                    else:
+                        logger.error("FlareSolverr bypass failed or FlareSolverr not running.")
+            elif response.status_code == 429:
+                logger.warning(f"Rate limited (429) for {url}. Waiting 5 seconds...")
+                time.sleep(5)
                 response = self.session.get(url, **kwargs)
-            else:
-                logger.error("FlareSolverr bypass failed.")
                 
         return response
 
     def _solve_cloudflare(self, target_url: str) -> bool:
         """Use FlareSolverr to get clearance cookies."""
         try:
-            # Create session
+            # Create session - using shorter timeout for connection to avoid long hangs
             logger.debug(f"Creating FlareSolverr session at {self.flaresolverr_url}...")
             session_res = requests.post(self.flaresolverr_url, json={
                 "cmd": "sessions.create"
-            }, timeout=30).json()
+            }, timeout=10).json()
             
             if session_res.get("status") != "ok":
                 logger.error(f"Failed to create FlareSolverr session: {session_res}")

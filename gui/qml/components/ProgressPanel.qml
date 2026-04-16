@@ -24,9 +24,12 @@ Rectangle {
     color: bgCard
     radius: 12
     
+    ListModel { id: taskModel }
+    
     function reset() {
         currentChapter = ""; completedChapters = 0; totalChapters = 0
         isFinished = false; successCount = 0; failCount = 0
+        taskModel.clear()
     }
     
     function updateProgress(completed, total) {
@@ -36,6 +39,36 @@ Rectangle {
     function setChapterStatus(name, s, message) {
         currentChapter = name
         if (s) successCount++; else failCount++
+        
+        // Mark task as complete in the list
+        for (var i = 0; i < taskModel.count; i++) {
+            if (taskModel.get(i).name === name) {
+                taskModel.setProperty(i, "status", s ? "Complete" : "Failed")
+                taskModel.setProperty(i, "progress", 100)
+                break
+            }
+        }
+    }
+    
+    function updateChapterProgress(name, current, total) {
+        var found = false
+        for (var i = 0; i < taskModel.count; i++) {
+            if (taskModel.get(i).name === name) {
+                taskModel.setProperty(i, "progress", (current / total) * 100)
+                taskModel.setProperty(i, "details", current + " / " + total + " images")
+                found = true
+                break
+            }
+        }
+        
+        if (!found) {
+            taskModel.append({
+                "name": name,
+                "progress": (current / total) * 100,
+                "details": current + " / " + total + " images",
+                "status": "Downloading"
+            })
+        }
     }
     
     function setFinished(successful, failed) {
@@ -65,48 +98,76 @@ Rectangle {
             }
         }
         
-        // CURRENT CHAPTER
-        Text {
-            text: currentChapter
-            font.pixelSize: 14
-            color: textSecondary
-            elide: Text.ElideRight
-            Layout.fillWidth: true
-            visible: !isFinished
-        }
-        
-        // PROGRESS BAR
+        // OVERALL PROGRESS BAR
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 12
+            Layout.preferredHeight: 8
             color: bgElevated
-            radius: 6
+            radius: 4
             
             Rectangle {
                 anchors.left: parent.left
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 width: totalChapters > 0 ? parent.width * (completedChapters / totalChapters) : 0
-                radius: 6
-                
+                radius: 4
                 gradient: Gradient {
                     orientation: Gradient.Horizontal
                     GradientStop { position: 0.0; color: isFinished ? success : accentPrimary }
                     GradientStop { position: 1.0; color: isFinished ? "#8BC34A" : accentHighlight }
                 }
-                
                 Behavior on width { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+            }
+        }
+        
+        // ACTIVE CHAPTERS LIST
+        ScrollView {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            visible: !isFinished && taskModel.count > 0
+            clip: true
+            
+            ListView {
+                model: taskModel
+                spacing: 8
+                delegate: ColumnLayout {
+                    width: parent.width
+                    spacing: 2
+                    
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text {
+                            text: model.name
+                            font.pixelSize: 12; font.weight: Font.Medium
+                            color: textPrimary; elide: Text.ElideRight; Layout.fillWidth: true
+                        }
+                        Text {
+                            text: model.details
+                            font.pixelSize: 10; color: textSecondary
+                        }
+                    }
+                    
+                    Rectangle {
+                        Layout.fillWidth: true; Layout.preferredHeight: 4
+                        color: bgElevated; radius: 2
+                        Rectangle {
+                            height: parent.height; radius: 2
+                            width: parent.width * (model.progress / 100)
+                            color: model.status === "Failed" ? "#E57373" : (model.status === "Complete" ? success : accentPrimary)
+                            Behavior on width { NumberAnimation { duration: 150 } }
+                        }
+                    }
+                }
             }
         }
         
         // COMPLETION MESSAGE
         Text {
-            text: "🎉 All chapters downloaded successfully!"
+            text: failCount === 0 ? "🎉 All chapters downloaded successfully!" : "⚠️ Some chapters failed to download."
             font.pixelSize: 14
-            color: success
-            visible: isFinished && failCount === 0
-            opacity: isFinished ? 1 : 0
-            Behavior on opacity { NumberAnimation { duration: 400 } }
+            color: failCount === 0 ? success : "#E57373"
+            visible: isFinished
+            Layout.alignment: Qt.AlignHCenter
         }
     }
 }

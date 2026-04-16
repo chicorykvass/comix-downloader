@@ -5,7 +5,7 @@ import QtQuick.Layouts
 Rectangle {
     id: root
     
-    property var chapters: []
+    ListModel { id: chapterModel }
     property var allChapters: []  // Store original list for filtering
     property string currentFilter: "Any"
     
@@ -27,23 +27,20 @@ Rectangle {
     
     function applyFilter(filter) {
         currentFilter = filter
-        if (filter === "Any" || !filter) {
-            chapters = allChapters.slice()
-        } else {
-            var filtered = []
-            for (var i = 0; i < allChapters.length; i++) {
-                if (allChapters[i].group_name === filter) {
-                    filtered.push(allChapters[i])
-                }
+        chapterModel.clear()
+        
+        for (var i = 0; i < allChapters.length; i++) {
+            var ch = allChapters[i]
+            if (filter === "Any" || !filter || ch.group_name === filter) {
+                chapterModel.append(ch)
             }
-            chapters = filtered
         }
     }
     
     function getSelectedChapters() {
         var selected = []
-        for (var i = 0; i < chapters.length; i++) {
-            if (chapters[i].selected) selected.push(chapters[i])
+        for (var i = 0; i < allChapters.length; i++) {
+            if (allChapters[i].selected) selected.push(allChapters[i])
         }
         return selected
     }
@@ -107,7 +104,7 @@ Rectangle {
             id: listView
             Layout.fillWidth: true
             Layout.fillHeight: true
-            model: root.chapters
+            model: chapterModel
             clip: true
             spacing: 4
             
@@ -132,16 +129,21 @@ Rectangle {
             delegate: ChapterDelegate {
                 id: chapterDelegate
                 width: listView.width - 10
-                chapter: modelData
+                chapter: ({
+                    "chapter_id": model.chapter_id,
+                    "number": model.number,
+                    "title": model.title,
+                    "group_name": model.group_name,
+                    "selected": model.selected
+                })
                 onToggled: {
-                    var updated = chapterList.chapters.slice()
-                    updated[index].selected = !updated[index].selected
-                    chapterList.chapters = updated
+                    var isSelected = !model.selected
+                    chapterModel.setProperty(index, "selected", isSelected)
                     
-                    // Also update in allChapters
-                    for (var j = 0; j < chapterList.allChapters.length; j++) {
-                        if (chapterList.allChapters[j].chapter_id === modelData.chapter_id) {
-                            chapterList.allChapters[j].selected = updated[index].selected
+                    // Also update in allChapters reference
+                    for (var j = 0; j < root.allChapters.length; j++) {
+                        if (root.allChapters[j].chapter_id === model.chapter_id) {
+                            root.allChapters[j].selected = isSelected
                             break
                         }
                     }
@@ -156,7 +158,7 @@ Rectangle {
                 text: currentFilter !== "Any" ? "No chapters from this scanlator" : "Enter a manga URL to see chapters"
                 font.pixelSize: 14
                 color: textTertiary
-                visible: root.chapters.length === 0
+                visible: chapterModel.count === 0
             }
         }
         
@@ -173,18 +175,12 @@ Rectangle {
                 Text { id: allText; anchors.centerIn: parent; text: "Select All"; font.pixelSize: 12; color: textSecondary }
                 MouseArea { id: allArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                     onClicked: {
-                        var updated = root.chapters.slice()
-                        for (var i = 0; i < updated.length; i++) {
-                            updated[i].selected = true
-                            // Also update in allChapters
-                            for (var j = 0; j < root.allChapters.length; j++) {
-                                if (root.allChapters[j].chapter_id === updated[i].chapter_id) {
-                                    root.allChapters[j].selected = true
-                                    break
-                                }
-                            }
+                        for (var i = 0; i < chapterModel.count; i++) {
+                            chapterModel.setProperty(i, "selected", true)
                         }
-                        root.chapters = updated
+                        for (var j = 0; j < allChapters.length; j++) {
+                            allChapters[j].selected = true
+                        }
                     }
                 }
             }
@@ -197,18 +193,12 @@ Rectangle {
                 Text { id: noneText; anchors.centerIn: parent; text: "None"; font.pixelSize: 12; color: textSecondary }
                 MouseArea { id: noneArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                     onClicked: {
-                        var updated = root.chapters.slice()
-                        for (var i = 0; i < updated.length; i++) {
-                            updated[i].selected = false
-                            // Also update in allChapters
-                            for (var j = 0; j < root.allChapters.length; j++) {
-                                if (root.allChapters[j].chapter_id === updated[i].chapter_id) {
-                                    root.allChapters[j].selected = false
-                                    break
-                                }
-                            }
+                        for (var i = 0; i < chapterModel.count; i++) {
+                            chapterModel.setProperty(i, "selected", false)
                         }
-                        root.chapters = updated
+                        for (var j = 0; j < allChapters.length; j++) {
+                            allChapters[j].selected = false
+                        }
                     }
                 }
             }

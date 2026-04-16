@@ -4,6 +4,7 @@ Main downloader with threading support for concurrent downloads.
 
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 from typing import Optional, Callable
 from rich.progress import Progress, TaskID, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
 
@@ -17,6 +18,18 @@ from ..utils.logger import get_logger
 from ..utils.session import get_session
 
 logger = get_logger(__name__)
+
+# Global event to signal cancellation across all downloaders
+_cancel_event = threading.Event()
+
+def cancel_downloads():
+    """Signal all active downloaders to stop."""
+    _cancel_event.set()
+    logger.warning("Cancellation signal received. Stopping downloads...")
+
+def is_cancelled():
+    """Check if cancellation has been signaled."""
+    return _cancel_event.is_set()
 
 
 class ImageDownloader:
@@ -37,9 +50,21 @@ class ImageDownloader:
             Tuple of (index, image_bytes, error_message)
         """
         def _download():
-            response = get_session().get(url, timeout=30)
+            if is_cancelled():
+                raise InterruptedError("Download cancelled")
+                
+            logger.debug(f"Starting download of image {index}: {url}")
+            response = get_session().get(url, timeout=30, stream=True)
             response.raise_for_status()
-            return response.content
+            
+            # Use chunks like test.py for better speed and lower memory usage
+            content = bytearray()
+            for chunk in response.iter_content(chunk_size=8192):
+                if is_cancelled():
+                    raise InterruptedError("Download cancelled")
+                if chunk:
+                    content.extend(chunk)
+            return bytes(content)
         
         success, data, error = self.retrier.download_with_retry(
             _download,
@@ -52,7 +77,8 @@ class ImageDownloader:
         self,
         image_urls: list[str],
         progress: Optional[Progress] = None,
-        task_id: Optional[TaskID] = None
+        task_id: Optional[TaskID] = None,
+        on_progress: Optional[Callable[[int, int], None]] = None
     ) -> list[tuple[int, bytes]]:
         """
         Download all images concurrently.
@@ -63,6 +89,8 @@ class ImageDownloader:
         results = []
         failed = []
         
+        logger.info(f"Downloading {len(image_urls)} images concurrently...")
+        
         with ThreadPoolExecutor(max_workers=self.config.max_image_workers) as executor:
             futures = {
                 executor.submit(self.download_image, url, idx): idx
@@ -70,6 +98,8 @@ class ImageDownloader:
             }
             
             for future in as_completed(futures):
+                if is_cancelled():
+                    break
                 idx = futures[future]
                 try:
                     index, data, error = future.result()
@@ -84,6 +114,9 @@ class ImageDownloader:
                 
                 if progress and task_id:
                     progress.advance(task_id)
+                
+                if on_progress:
+                    on_progress(len(results) + len(failed), len(image_urls))
         
         if failed:
             logger.warning(f"{len(failed)} images failed to download")
@@ -103,7 +136,8 @@ class ChapterDownloader:
         self,
         chapter: Chapter,
         progress: Optional[Progress] = None,
-        parent_task: Optional[TaskID] = None
+        parent_task: Optional[TaskID] = None,
+        on_image_progress: Optional[Callable[[int, int], None]] = None
     ) -> tuple[bool, str]:
         """
         Download a chapter and save in configured format.
@@ -132,7 +166,7 @@ class ChapterDownloader:
             
             # Download all images
             image_data = self.image_downloader.download_all_images(
-                image_urls, progress, task_id
+                image_urls, progress, task_id, on_progress=on_image_progress
             )
             
             if not image_data:
@@ -214,6 +248,8 @@ class MangaDownloader:
             }
             
             for future in as_completed(futures):
+                if is_cancelled():
+                    break
                 chapter = futures[future]
                 try:
                     success, message = future.result()

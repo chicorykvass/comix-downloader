@@ -77,7 +77,6 @@ ApplicationWindow {
                         id: chapterList
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        chapters: []
                     }
                 }
                 
@@ -125,6 +124,7 @@ ApplicationWindow {
         target: DownloadBridge
         function onDownloadStarted() { progressPanel.visible = true; progressPanel.reset() }
         function onOverallProgress(current, total) { progressPanel.updateProgress(current, total) }
+        function onChapterProgress(name, current, total) { progressPanel.updateChapterProgress(name, current, total) }
         function onChapterComplete(name, success, message) { progressPanel.setChapterStatus(name, success, message) }
         function onDownloadFinished(successful, failed) { progressPanel.setFinished(successful, failed) }
     }

@@ -10,7 +10,7 @@ from pathlib import Path
 from .display import Display
 from .menus import MainMenu, ChapterSelector, SettingsMenu
 from ..api.comix import ComixAPI
-from ..core.downloader import MangaDownloader
+from ..core.downloader import MangaDownloader, cancel_downloads
 from ..core.models import OutputFormat
 from ..utils.config import ConfigManager
 from ..utils.logger import setup_logging
@@ -55,6 +55,7 @@ class ComixDownloaderApp:
                     self._handle_download()
                     
             except KeyboardInterrupt:
+                cancel_downloads()
                 console.print("\n[yellow]Interrupted. Returning to menu...[/]")
                 continue
     
@@ -148,7 +149,10 @@ def main():
         app_instance = ComixDownloaderApp()
         app_instance.run()
     except KeyboardInterrupt:
+        cancel_downloads()
         console.print("\n[bold cyan]👋 Goodbye![/]\n")
+        import sys
+        sys.exit(0)
     except Exception as e:
         console.print(f"\n[bold red]Fatal error: {e}[/]\n")
         raise
@@ -201,6 +205,10 @@ def download(
             
             Display.show_download_summary(successful, failed, manga.title)
             
+        except KeyboardInterrupt:
+            cancel_downloads()
+            console.print("\n[yellow]Interrupted by user.[/]")
+            raise typer.Exit(0)
         except Exception as e:
             Display.error(str(e))
             raise typer.Exit(1)

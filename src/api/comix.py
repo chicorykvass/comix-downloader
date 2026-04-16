@@ -7,6 +7,7 @@ from ..core.models import MangaInfo, Chapter
 from ..utils.retry import retry_with_backoff
 from ..utils.logger import get_logger
 from ..utils.session import get_session
+from ..utils.hash import generate_comix_hash
 
 logger = get_logger(__name__)
 
@@ -37,8 +38,14 @@ class ComixAPI:
         
         response = get_session().get(url, timeout=30)
         response.raise_for_status()
-        data = response.json()["result"]
         
+        json_data = response.json()
+        data = json_data.get("result")
+        
+        if not data:
+            logger.error(f"API returned no result for manga code: {manga_code}. Response: {json_data}")
+            return None
+            
         return MangaInfo(
             manga_id=data.get("manga_id"),
             hash_id=data.get("hash_id"),
@@ -64,16 +71,43 @@ class ComixAPI:
         )
     
     @classmethod
-    def _fetch_chapter_page(cls, manga_code: str, page: int) -> tuple[int, list[dict]]:
+    def _fetch_chapter_page(cls, manga_code: str, page: int, force_flare: bool = False) -> tuple[int, list[dict]]:
         """Fetch a single page of chapters. Returns (page_number, items)."""
-        url = f"{cls.BASE_URL}/manga/{manga_code}/chapters?limit=100&page={page}&order[number]=asc"
+        base_path = f"/manga/{manga_code}/chapters"
+        time_val = 1
+        
         try:
-            response = get_session().get(url, timeout=30)
+            # Generate the required Comix hash for the request
+            request_hash = generate_comix_hash(base_path, time=time_val)
+            
+            # API uses limit, page, order, time, and _ (hash)
+            url = f"{cls.BASE_URL}{base_path}?limit=100&page={page}&order[number]=desc&time={time_val}&_={request_hash}"
+            
+            # If it's the first page and we aren't sure about the session, we can force flare
+            response = get_session().get(url, timeout=30, force_flare=force_flare)
             response.raise_for_status()
-            data = response.json()["result"]
+            
+            json_data = response.json()
+            data = json_data.get("result")
+            
+            if data is None:
+                # If result is null but status is 200, it might be a soft block or actual end
+                # If it's page 1, it's very likely a block if no chapters are found
+                if page == 1 and not force_flare:
+                    logger.warning(f"Page 1 returned null result (even with hash). Retrying with forced FlareSolverr...")
+                    return cls._fetch_chapter_page(manga_code, page, force_flare=True)
+                    
+                logger.debug(f"API returned null result for page {page} - possibly end of list.")
+                return page, []
+                
             return page, data.get("items", [])
         except Exception as e:
-            logger.warning(f"Failed to fetch page {page}: {e}")
+            # If we hit an error on page 1, try one last time with force_flare
+            if page == 1 and not force_flare:
+                logger.warning(f"Error fetching page 1: {e}. Retrying with forced FlareSolverr...")
+                return cls._fetch_chapter_page(manga_code, page, force_flare=True)
+                
+            logger.warning(f"Failed to fetch page {page}: {str(e)}")
             return page, []
     
     @classmethod
@@ -111,12 +145,15 @@ class ComixAPI:
         chapters = []
         for page_num in sorted(all_items.keys()):
             for chap in all_items[page_num]:
+                if not chap:
+                    continue
+                    
                 group = chap.get("scanlation_group")
                 is_official = chap.get("is_official", 0)
                 
                 # Determine group name: prefer scanlation_group, then check is_official
                 if group:
-                    group_name = group["name"]
+                    group_name = group.get("name")
                 elif is_official:
                     group_name = "Official"
                 else:
@@ -131,6 +168,8 @@ class ComixAPI:
                     group_name=group_name,
                     pages_count=chap.get("pages_count", 0)
                 ))
+        # Reverse the list so old chapters (low numbers) are at the beginning
+        chapters.reverse()
         
         logger.info(f"Found {len(chapters)} chapters (fetched {len(all_items)} pages in parallel)")
         return chapters
@@ -139,14 +178,19 @@ class ComixAPI:
     @retry_with_backoff()
     def get_chapter_images(cls, chapter_id: int) -> list[str]:
         """Fetch all image URLs for a chapter."""
-        url = f"{cls.BASE_URL}/chapters/{chapter_id}/"
-        logger.debug(f"Fetching images for chapter {chapter_id}")
+        base_path = f"/chapters/{chapter_id}/"
+        time_val = 1
+        
+        request_hash = generate_comix_hash(base_path, time=time_val)
+        url = f"{cls.BASE_URL}{base_path}?time={time_val}&_={request_hash}"
+        
+        logger.debug(f"Fetching images for chapter {chapter_id} (hash used)")
         
         response = get_session().get(url, timeout=30)
         response.raise_for_status()
         data = response.json()
         
-        images = data.get("result", {}).get("images", [])
+        images = (data.get("result") or {}).get("images", [])
         image_urls = [img["url"] for img in images if "url" in img]
         
         logger.debug(f"Found {len(image_urls)} images")

@@ -44,7 +44,7 @@ def main():
     args = parse_args()
     
     # Suppress Qt/QML warnings (they are harmless but noisy)
-    os.environ["QT_LOGGING_RULES"] = "*=false"  # Suppress all Qt debug/warning messages
+    # os.environ["QT_LOGGING_RULES"] = "*=false"  # Suppress all Qt debug/warning messages
     
     # Set rendering backend (must be set BEFORE QApplication)
     if args.cpu:
@@ -63,6 +63,10 @@ def main():
     
     # Load fonts
     load_fonts()
+    
+    # Force Fusion style via environment variable to avoid DLL loading issues with native styles
+    # This also avoids needing the PyQt6.QtQuickControls2 module which might be missing
+    os.environ["QT_QUICK_CONTROLS_STYLE"] = "Fusion"
     
     # Create QML engine
     engine = QQmlApplicationEngine()

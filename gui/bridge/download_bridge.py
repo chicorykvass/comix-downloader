@@ -48,9 +48,16 @@ class DownloadWorker(QThread):
             
             chapter_name = chapter.get_display_name()
             
+            # Create a callback for image progress
+            def on_image_progress(current, total):
+                self.chapterProgress.emit(chapter_name, current, total)
+            
             # Download the chapter
             ch_downloader = ChapterDownloader(self.config, manga)
-            success, message = ch_downloader.download_chapter(chapter)
+            success, message = ch_downloader.download_chapter(
+                chapter, 
+                on_image_progress=on_image_progress
+            )
             
             # Update progress with thread safety
             with self._lock:
