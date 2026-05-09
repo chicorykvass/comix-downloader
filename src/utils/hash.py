@@ -30,45 +30,45 @@ class ComixHash:
         s = list(range(256))
         j = 0
         for i in range(256):
-            j = (j + s[i] + key[i % len(key)]) & 0xff
+            j = (j + s[i] + key[i % len(key)]) % 256
             s[i], s[j] = s[j], s[i]
         
         i = 0
         j = 0
         out = bytearray()
         for k in range(len(data)):
-            i = (i + 1) & 0xff
-            j = (j + s[i]) & 0xff
+            i = (i + 1) % 256
+            j = (j + s[i]) % 256
             s[i], s[j] = s[j], s[i]
-            rnd = s[(s[i] + s[j]) & 0xff]
+            rnd = s[(s[i] + s[j]) % 256]
             out.append(data[k] ^ rnd)
         return out
 
     # Mutation functions
     @staticmethod
-    def mut_s(e: int) -> int: return (e + 143) & 0xff
+    def mut_s(e: int) -> int: return (e + 143) % 256
     @staticmethod
     def mut_l(e: int) -> int: return ((e >> 1) | (e << 7)) & 0xff
     @staticmethod
-    def mut_c(e: int) -> int: return (e + 115) & 0xff
+    def mut_c(e: int) -> int: return (e + 115) % 256
     @staticmethod
-    def mut_m(e: int) -> int: return (e ^ 177) & 0xff
+    def mut_m(e: int) -> int: return e ^ 177
     @staticmethod
-    def mut_f(e: int) -> int: return (e - 188) & 0xff
+    def mut_f(e: int) -> int: return (e - 188 + 256) % 256
     @staticmethod
     def mut_g(e: int) -> int: return ((e << 2) | (e >> 6)) & 0xff
     @staticmethod
-    def mut_h(e: int) -> int: return (e - 42) & 0xff
+    def mut_h(e: int) -> int: return (e - 42 + 256) % 256
     @staticmethod
     def mut_dollar(e: int) -> int: return ((e << 4) | (e >> 4)) & 0xff
     @staticmethod
-    def mut_b(e: int) -> int: return (e - 12) & 0xff
+    def mut_b(e: int) -> int: return (e - 12 + 256) % 256
     @staticmethod
-    def mut_underscore(e: int) -> int: return (e - 20) & 0xff
+    def mut_underscore(e: int) -> int: return (e - 20 + 256) % 256
     @staticmethod
     def mut_y(e: int) -> int: return ((e >> 1) | (e << 7)) & 0xff
     @staticmethod
-    def mut_k(e: int) -> int: return (e - 241) & 0xff
+    def mut_k(e: int) -> int: return (e - 241 + 256) & 0xff
 
     @staticmethod
     def get_mut_key(mk: bytes, idx: int) -> int:
@@ -193,11 +193,9 @@ class ComixHash:
         return out
 
     @classmethod
-    def generate_hash(cls, path: str, body_size: int = 0, time: int = 1) -> str:
-        """Generate the Comix hash for a given request path and time."""
-        base_string = f"{path}:{body_size}:{time}"
+    def generate_hash(cls, path: str) -> str:
         # JS encodeURIComponent equivalent in Python
-        encoded = urllib.parse.quote(base_string, safe="-_.!~*'()")
+        encoded = urllib.parse.quote(path, safe="-_.!~*'()")
         initial_bytes = encoded.encode('utf-8')
         
         keys = cls.encoded_keys()
@@ -212,6 +210,6 @@ class ComixHash:
         return base64.urlsafe_b64encode(res5).decode('ascii').rstrip('=')
 
 
-def generate_comix_hash(path: str, body_size: int = 0, time: int = 1) -> str:
+def generate_comix_hash(path: str) -> str:
     """Convenience function to generate the Comix hash."""
-    return ComixHash.generate_hash(path, body_size, time)
+    return ComixHash.generate_hash(path)

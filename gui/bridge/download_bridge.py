@@ -40,8 +40,10 @@ class DownloadWorker(QThread):
             # Convert dict to Chapter object
             chapter = Chapter(
                 chapter_id=chapter_dict["chapter_id"],
-                number=chapter_dict["number"],
+                number=chapter_dict.get("number"),
                 title=chapter_dict.get("title"),
+                volume=chapter_dict.get("volume"),
+                language=chapter_dict.get("language"),
                 group_name=chapter_dict.get("group_name"),
                 pages_count=chapter_dict.get("pages_count", 0)
             )
@@ -94,13 +96,16 @@ class DownloadWorker(QThread):
             # Convert dict back to MangaInfo
             manga = MangaInfo(
                 manga_id=self.manga_dict.get("manga_id"),
-                hash_id=self.manga_dict.get("hash_id"),
+                manga_url=self.manga_dict.get("manga_url"),
                 title=self.manga_dict.get("title", "Unknown"),
                 alt_titles=self.manga_dict.get("alt_titles", []),
+                writer=self.manga_dict.get("writer", []),
+                penciller=self.manga_dict.get("penciller", []),
                 manga_type=self.manga_dict.get("manga_type"),
                 status=self.manga_dict.get("status"),
                 poster_url=self.manga_dict.get("poster_url"),
                 year=self.manga_dict.get("year"),
+                genres=self.manga_dict.get("genres"),
                 rated_avg=self.manga_dict.get("rated_avg"),
                 follows_total=self.manga_dict.get("follows_total"),
                 is_nsfw=self.manga_dict.get("is_nsfw", False),

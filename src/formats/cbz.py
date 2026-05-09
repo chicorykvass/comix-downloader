@@ -40,8 +40,14 @@ def create_comic_info_xml(
     # Series info
     SubElement(root, "Series").text = manga.title
     
+    if manga.writer:
+        SubElement(root, "Writer").text = ", ".join(str(w) for w in manga.writer)
+    
+    if manga.penciller:
+        SubElement(root, "Penciller").text = ", ".join(str(w) for w in manga.penciller)
+    
     if manga.alt_titles:
-        SubElement(root, "AlternateSeries").text = manga.alt_titles[0] if manga.alt_titles else ""
+        SubElement(root, "AlternateSeries").text = ", ".join(str(a) for a in manga.alt_titles[:7]) if manga.alt_titles else ""
     
     # Chapter/Volume numbers
     try:
@@ -66,7 +72,7 @@ def create_comic_info_xml(
     # Publisher/Team
     if chapter.group_name:
         SubElement(root, "Publisher").text = chapter.group_name
-    
+
     # Genre
     if manga.genres:
         SubElement(root, "Genre").text = ", ".join(str(g) for g in manga.genres[:10])
@@ -96,7 +102,7 @@ def create_comic_info_xml(
         SubElement(root, "AgeRating").text = "Adults Only 18+"
     
     # Web link
-    SubElement(root, "Web").text = f"https://comix.to/title/{manga.hash_id}-{manga.slug}"
+    SubElement(root, "Web").text = manga.manga_url
     
     # Format to pretty XML
     xml_str = tostring(root, encoding="unicode")

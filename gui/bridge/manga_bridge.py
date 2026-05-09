@@ -38,12 +38,15 @@ class FetchWorker(QThread):
             # Convert to dict for QML
             manga_dict = {
                 "manga_id": manga.manga_id,
-                "hash_id": manga.hash_id,
+                "manga_url": manga.manga_url,
                 "title": manga.title,
                 "alt_titles": manga.alt_titles or [],
+                "writer": manga.writer or [],
+                "penciller": manga.penciller or [],
                 "manga_type": manga.manga_type or "Unknown",
                 "status": manga.status or "Unknown",
                 "poster_url": manga.poster_url or "",
+                "genres": manga.genres or [],
                 "year": manga.year or 0,
                 "rated_avg": manga.rated_avg or 0,
                 "follows_total": manga.follows_total or 0,
@@ -63,6 +66,8 @@ class FetchWorker(QThread):
                 chapters_list.append({
                     "chapter_id": ch.chapter_id,
                     "number": str(ch.number),
+                    "volume": str(ch.volume),
+                    "language": ch.language,
                     "title": ch.title or "",
                     "group_name": ch.group_name or "Unknown",
                     "pages_count": ch.pages_count,

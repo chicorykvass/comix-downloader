@@ -15,7 +15,7 @@ logger = get_logger(__name__)
 class ComixAPI:
     """API wrapper for comix.to"""
     
-    BASE_URL = "https://comix.to/api/v2"
+    BASE_URL = "https://comix.to/api/v1"
     
     @staticmethod
     def extract_manga_code(url: str) -> str:
@@ -45,28 +45,36 @@ class ComixAPI:
         if not data:
             logger.error(f"API returned no result for manga code: {manga_code}. Response: {json_data}")
             return None
-            
+
+        manga_genres = data.get("genres", [])
+        manga_genres = [genre["title"] for genre in manga_genres if "title" in genre]
+        writers = data.get("authors", [])
+        writers = [writer["title"] for writer in writers if "title" in writer]
+        pencillers = data.get("artists", [])
+        pencillers = [penciller["title"] for penciller in pencillers if "title" in penciller]
+        
         return MangaInfo(
-            manga_id=data.get("manga_id"),
-            hash_id=data.get("hash_id"),
+            manga_id=data.get("id"),
             title=data.get("title", "Unknown"),
-            alt_titles=data.get("alt_titles", []),
-            slug=data.get("slug"),
+            alt_titles=data.get("altTitles", []),
+            writer=writers,
+            penciller=pencillers,
+            manga_url=data.get("url"),
             rank=data.get("rank"),
             manga_type=data.get("type"),
             poster_url=data.get("poster", {}).get("large") or data.get("poster", {}).get("medium"),
-            original_language=data.get("original_language"),
+            original_language=data.get("originalLanguage"),
             status=data.get("status"),
-            final_chapter=data.get("final_chapter"),
-            latest_chapter=data.get("latest_chapter"),
-            start_date=data.get("start_date"),
-            end_date=data.get("end_date"),
-            rated_avg=data.get("rated_avg"),
-            rated_count=data.get("rated_count"),
-            follows_total=data.get("follows_total"),
-            is_nsfw=data.get("is_nsfw", False),
+            final_chapter=data.get("finalChapter"),
+            latest_chapter=data.get("latestChapter"),
+            start_date=data.get("startDate"),
+            end_date=data.get("endDate"),
+            rated_avg=data.get("ratedAvg"),
+            rated_count=data.get("ratedCount"),
+            follows_total=data.get("followsTotal"),
+            is_nsfw=False,
             year=data.get("year"),
-            genres=data.get("term_ids", []),
+            genres=manga_genres,
             description=data.get("synopsis", "")
         )
     
@@ -74,14 +82,13 @@ class ComixAPI:
     def _fetch_chapter_page(cls, manga_code: str, page: int, force_flare: bool = False) -> tuple[int, list[dict]]:
         """Fetch a single page of chapters. Returns (page_number, items)."""
         base_path = f"/manga/{manga_code}/chapters"
-        time_val = 1
         
         try:
             # Generate the required Comix hash for the request
-            request_hash = generate_comix_hash(base_path, time=time_val)
+            request_hash = generate_comix_hash(base_path)
             
             # API uses limit, page, order, time, and _ (hash)
-            url = f"{cls.BASE_URL}{base_path}?limit=100&page={page}&order[number]=desc&time={time_val}&_={request_hash}"
+            url = f"{cls.BASE_URL}{base_path}?limit=100&page={page}&order%5Bnumber%5D=desc&_={request_hash}"
             
             # If it's the first page and we aren't sure about the session, we can force flare
             response = get_session().get(url, timeout=30, force_flare=force_flare)
@@ -148,7 +155,7 @@ class ComixAPI:
                 if not chap:
                     continue
                     
-                group = chap.get("scanlation_group")
+                group = chap.get("group")
                 is_official = chap.get("is_official", 0)
                 
                 # Determine group name: prefer scanlation_group, then check is_official
@@ -160,13 +167,14 @@ class ComixAPI:
                     group_name = None
                 
                 chapters.append(Chapter(
-                    chapter_id=chap["chapter_id"],
+                    chapter_id=chap["id"],
                     number=chap["number"],
                     title=chap.get("name") or chap.get("title"),  # API uses 'name' field
                     volume=chap.get("volume"),
+                    language=chap.get("language"),
                     votes=chap.get("votes"),
                     group_name=group_name,
-                    pages_count=chap.get("pages_count", 0)
+                    pages_count=chap.get("pagesCount", 0)
                 ))
         # Reverse the list so old chapters (low numbers) are at the beginning
         chapters.reverse()
@@ -178,19 +186,18 @@ class ComixAPI:
     @retry_with_backoff()
     def get_chapter_images(cls, chapter_id: int) -> list[str]:
         """Fetch all image URLs for a chapter."""
-        base_path = f"/chapters/{chapter_id}/"
-        time_val = 1
+        base_path = f"/chapters/{chapter_id}"
         
-        request_hash = generate_comix_hash(base_path, time=time_val)
-        url = f"{cls.BASE_URL}{base_path}?time={time_val}&_={request_hash}"
-        
+        request_hash = generate_comix_hash(base_path)
+        url = f"{cls.BASE_URL}{base_path}?_={request_hash}"
+
         logger.debug(f"Fetching images for chapter {chapter_id} (hash used)")
         
         response = get_session().get(url, timeout=30)
         response.raise_for_status()
         data = response.json()
         
-        images = (data.get("result") or {}).get("images", [])
+        images = (data.get("result") or {}).get("pages", [])
         image_urls = [img["url"] for img in images if "url" in img]
         
         logger.debug(f"Found {len(image_urls)} images")

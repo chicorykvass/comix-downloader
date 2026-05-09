@@ -18,10 +18,11 @@ class OutputFormat(str, Enum):
 class MangaInfo:
     """Manga information from API."""
     manga_id: Optional[int] = None
-    hash_id: Optional[str] = None
+    manga_url: str = ""
+    writer: list[str] = field(default_factory=list)
+    penciller: list[str] = field(default_factory=list)
     title: str = "Unknown"
     alt_titles: list[str] = field(default_factory=list)
-    slug: Optional[str] = None
     rank: Optional[int] = None
     manga_type: Optional[str] = None
     poster_url: Optional[str] = None
@@ -36,7 +37,7 @@ class MangaInfo:
     follows_total: Optional[int] = None
     is_nsfw: bool = False
     year: Optional[int] = None
-    genres: list = field(default_factory=list)
+    genres: list[str] = field(default_factory=list)
     description: str = ""
     
     def get_safe_title(self) -> str:
@@ -52,6 +53,7 @@ class Chapter:
     number: str
     title: Optional[str] = None
     volume: Optional[str] = None
+    language: Optional[str] = None
     votes: Optional[int] = None
     group_name: Optional[str] = None
     pages_count: int = 0
